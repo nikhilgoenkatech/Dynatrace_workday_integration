@@ -1,0 +1,48 @@
+{
+  "id": "00bf2742-fd39-41a3-baf6-c20e95a365dc",
+  "title": "Workday Workflow",
+  "tasks": {
+    "get_bearer_token": {
+      "name": "get_bearer_token",
+      "action": "dynatrace.automations:run-javascript",
+      "description": "Build a custom task running js Code",
+      "input": {
+        "script": "import { execution } from '@dynatrace-sdk/automation-utils';\nimport { credentialVaultClient } from \"@dynatrace-sdk/client-classic-environment-v2\";\n\n// Function to get client-id, client-secret & refresh-token from Dynatrace Credentials Vault\nasync function getCredentialsFromVault(config) {\n  try {\n    const data = await credentialVaultClient.listCredentials(config);\n    if (!data.credentials || data.credentials.length === 0) {\n      throw new Error('No credentials found');\n    }\n    const credentialsUuid = data.credentials[0].id;\n    return await credentialVaultClient.getCredentialsDetails({ id: credentialsUuid });\n  } catch (error) {\n    console.error(`Error fetching credentials: ${error.message}`);\n    throw error;\n  }\n}\n\n// Function to get bearer token\nasync function getBearerToken(endpoint, clientCredentials, refreshToken) {\n  try {\n    const  headers = {\n      'Authorization': `Basic ${btoa(clientCredentials[\"username\"] + ':' + clientCredentials[\"password\"])}`,\n      'Content-Type': 'application/x-www-form-urlencoded'      \n      };\n\n    const urlencoded = new URLSearchParams();\n    urlencoded.append(\"grant_type\", \"refresh_token\");\n    urlencoded.append(\"client_id\", clientCredentials[\"username\"]);\n    urlencoded.append(\"refresh_token\", refreshToken);\n\n    const response = await fetch(endpoint, {\n      method: \"POST\",\n      headers: headers,\n      body: urlencoded\n    });\n    \n    if (!response.ok) {\n      throw new Error(`HTTP error! status: ${response.status}`);\n    }\n\n    const data = await response.json();\n    return data.access_token;\n  } catch (error) {\n    console.error(`Error fetching bearer token: ${error.message}`);\n    throw error;\n  }\n}\n\n// Default function for the workflow\nexport default async function({ execution_id }) {\n  const workdayTokenURL = \"https://workdayserver-impl-services1.workday.com/ccx/oauth2/workday_tenant/token\";\n\n  try {\n    // Get client ID and secret & Refresh token\n    const clientCredentials = await getCredentialsFromVault({ name: \"Workday_clientid_and_secret\" });\n    const refreshTokenData = await getCredentialsFromVault({ name: \"Workday_refresh_token\" });\n\n    // Get bearer token\n    const bearerToken = await getBearerToken(workdayTokenURL, clientCredentials, refreshTokenData.token);\n    console.log(\"Generated bearer token\");\n\n    return { bearerToken };\n  } catch (error) {\n    console.error(`Execution failed: ${error.message}`);\n    throw error;\n  }\n}"
+      },
+      "active": true,
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "predecessors": []
+    },
+    "pull_logs_push_as_bizevents": {
+      "name": "pull_logs_push_as_bizevents",
+      "action": "dynatrace.automations:run-javascript",
+      "description": "Build a custom task running js Code",
+      "input": {
+        "script": "import { execution } from '@dynatrace-sdk/automation-utils';\nimport { businessEventsClient } from '@dynatrace-sdk/client-classic-environment-v2';\n\nconst delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));\n\n/* Function to form the endpoint for pulling logs with the offset and the timeframe*/\nfunction constructUrl(baseUrl, offset = 0) {\n  const url = new URL(baseUrl);\n  const now = new Date();\n  \n  //From would be 30 mins back as we have scheduled the workflow to run every hour\n  const fromDate = new Date(now.getTime() - 0.5 * 60 * 60 * 1000);\n  const params = new URLSearchParams({\n    from: fromDate.toISOString(),\n    to: now.toISOString()\n  });\n  \n  \n  url.search = params.toString();\n  return url.toString();\n}\n\n/* Function to call the workday API and pull the data according to the endpoint*/\nasync function getLogs(endpoint, bearerToken) {\n  console.log(`Starting request to ${endpoint} at ${new Date().toISOString()}`);\n\n  const myHeaders = new Headers();\n  myHeaders.append(\"Authorization\", `Bearer ${bearerToken}`);\n  \n  try {\n    const response = await fetch(endpoint, {\n      method: \"GET\",\n      headers: myHeaders\n    });\n    console.log(`Completed request to ${endpoint} at ${new Date().toISOString()}`);\n\n    if (!response.ok) {\n      throw new Error(`HTTP error! status: ${response.status}`);\n    }\n    \n    return await response.json();\n  } catch (error) {\n      throw error;\n  }\n}\n\n/* Function to push the pulled log data into Dynatrace as bizevents*/\nasync function getAllLogs(baseUrl, bearerToken) {\n  let offset = 0;\n  let allLogs = [];\n  let hasMoreData = true;\n\n  while (hasMoreData) {\n    const endpoint = constructUrl(baseUrl, offset);\n    console.log(`Attempting to fetch logs with offset: ${offset} at ${new Date().toISOString()}`);\n\n      const data = await getLogs(endpoint, bearerToken);\n     \n    if (data.data && data.data.length > 0) {\n      allLogs = allLogs.concat(data.data);\n      for (const log of data.data) {\n        log[\"event.provider\"]=\"workday\";\n\n        /* To stop specific records from getting stored, enable and modify the code below as per your requirements\n        if (log[\"systemAccount\"] == \"alex.saul@teamglobalexp.com\") {\n          console.log(\"Found alex.saul\");\n          continue;\n        }*/\n\n        try {\n          await businessEventsClient.ingest({\n            body: log,\n            type: 'application/json',\n          });\n        } catch (error) {\n          console.error('Failed to ingest event:', log);\n        }\n      }\n      offset += 1000;\n    } else {\n      hasMoreData = false;\n    }\n  }\n  return allLogs;\n}\n\nexport default async function ({ execution_id }) {\n    const ex = await execution(execution_id);\n    const baseUrl = 'https://workdayserver-impl-services1.workday.com/ccx/api/privacy/v1/workday_tenant/activityLogging';\n\n    const exe = await execution(execution_id);\n    const bearerToken = await exe.result('get_bearer_token');\n\n    const allLogs = await getAllLogs(baseUrl, bearerToken.bearerToken);    \n    console.log(`Total logs retrieved: ${allLogs.length}`);\n\n    return { triggeredBy: ex.trigger };\n}"
+      },
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "predecessors": [
+        "get_bearer_token"
+      ],
+      "conditions": {
+        "states": {
+          "get_bearer_token": "OK"
+        }
+      },
+      "timeout": 900
+    }
+  },
+  "description": "",
+  "actor": "f0185280-8f86-488c-afca-9759e28359c4",
+  "owner": "f0185280-8f86-488c-afca-9759e28359c4",
+  "ownerType": "USER",
+  "isPrivate": false,
+  "trigger": {},
+  "schemaVersion": 3
+}
