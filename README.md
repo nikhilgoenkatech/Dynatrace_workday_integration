@@ -97,7 +97,7 @@ Next, upload the [workflow](./workflow/wf_workday_workflow_00bf2742-fd39-41a3-ba
   ```
 4.Push Logs as BizEvents:
   Once the logs are successfully pulled, task will push the Dynatrace BizEvent SDK to push the logs as BizEvents.
-  ```
+  ```javascript
   try {
     await businessEventsClient.ingest({
       body: log,
@@ -133,8 +133,7 @@ Update System Properties:
 
 Set property-glide.http.outbound.max_timeout.enabled to false.
 Adjust the values for glide.http.connection_timeout, glide.http.outbound.max_timeout, and glide.http.timeout to higher values.
-Check Outbound HTTP Requests:
-Review the outbound web service response times from Workday under 'Outbound HTTP Requests'.
+Check Outbound HTTP Requests: Review the outbound web service response times from Workday under 'Outbound HTTP Requests'.
 
 
 
