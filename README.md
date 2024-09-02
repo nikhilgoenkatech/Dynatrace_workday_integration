@@ -32,7 +32,13 @@ Next, upload the [workflow](./workflow/wf_workday_workflow_00bf2742-fd39-41a3-ba
 2. **Update the `workdayTokenURL` Endpoint**:  
    In the `generate_bearer_token` task, modify the `workdayTokenURL` to point to your Workday endpoint, which will be used to generate the bearer token.
 
-   Code snippet for generate bearer token:  
+   ```javascript
+   export default async function({ execution_id }) {
+   const workdayTokenURL = "https://workdayserver-impl-services1.workday.com/ccx/oauth2/workday_tenant/token";
+   ```
+
+
+   Function to generate bearer token:  
    ```javascript
    async function getBearerToken(endpoint, clientCredentials, refreshToken) {
      try {
@@ -71,7 +77,7 @@ Next, upload the [workflow](./workflow/wf_workday_workflow_00bf2742-fd39-41a3-ba
      Modify the baseUrl in the pull_logs_push_as_bizevents task to match the correct Workday endpoint. This will be used to retrieve logs from Workday, with a offset of 1,000 records.
 
      Code snippet for pulling logs:
-  ```
+  ```javascript
     async function getLogs(endpoint, bearerToken) {
     console.log(`Starting request to ${endpoint} at ${new Date().toISOString()}`);
   
@@ -125,9 +131,11 @@ Within the Activity Designer, increase the HR Integrations Web Service timeout f
 Navigate to Activity Designer:
 
 Go to HR Integrations Web Service.
-Set Execution Command -> Timeout(secs) to 300 seconds (for example). Refer to the KB article on socket timeout errors during Workflow Activity execution.
+Set Execution Command -> Timeout(secs) to 300 seconds (for example). 
+Refer to the KB article on socket timeout errors during Workflow Activity execution.
 Adjust Pagination for the Web Service Function:
-Modify the <bsvc:Count> in the Get All Workers function as needed. Refer to the HR Integrations FAQ for details.
+Modify the <bsvc:Count> in the Get All Workers function as needed. 
+Refer to the HR Integrations FAQ for details.
 
 Update System Properties:
 
