@@ -78,35 +78,41 @@ Next, upload the [workflow](./workflow/wf_workday_workflow_00bf2742-fd39-41a3-ba
 
      Code snippet for pulling logs:
   ```javascript
-    async function getLogs(endpoint, bearerToken) {
-    console.log(`Starting request to ${endpoint} at ${new Date().toISOString()}`);
-  
-    const myHeaders = new Headers();
-    myHeaders.append("Authorization", `Bearer ${bearerToken}`);
-    
-    try {
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers: myHeaders
-      });
-      console.log(`Completed request to ${endpoint} at ${new Date().toISOString()}`);
-  
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      throw error;
-     }
-    }
+   /* Function to push the pulled log data into Dynatrace as bizevents*/
+   async function getAllLogs(baseUrl, bearerToken) {
+     let offset = 0;
+     let allLogs = [];
+     let hasMoreData = true;
+     
+     const now = new Date();
+     
+     //From would be 60 mins back as we have scheduled the workflow to run every hour
+     var fromDate = new Date(now.getTime() - 1 * 60 * 60 * 1000);
+     var toDate = new Date(now.getTime());
+   
+     //Populate the entire logs from workday API (by incrementing offset by 1000 in each iteration)
+     while (hasMoreData) {
+       const endpoint = constructUrl(baseUrl, fromDate, toDate, offset);
+       console.log(`Attempting to fetch logs with offset: ${offset} at ${new Date().toISOString()}`);
+       
+       const data = await getLogs(endpoint, bearerToken);
+       if (data.data && data.data.length > 0) {
+         allLogs = allLogs.concat(data.data);
+         console.log("Records in iteration-> ", data.data.length);
+         console.log("Total records -> ", allLogs.length);
+         offset += 1000;
+         } else {
+           hasMoreData = false;
+         }
+       }
+
   ```
 4.Push Logs as BizEvents:
   Once the logs are successfully pulled, task will push the Dynatrace BizEvent SDK to push the logs as BizEvents.
   ```javascript
   try {
     await businessEventsClient.ingest({
-      body: log,
+      body: batch,
       type: 'application/json',
     });
   } catch (error) {
